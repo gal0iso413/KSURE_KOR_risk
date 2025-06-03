@@ -1,0 +1,117 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment and Configuration
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+config_local.json
+config_*.json
+!config.json
+
+# Data Files
+data/*
+!data/.gitkeep
+!data/README.md
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.parquet
+
+# Model Artifacts and Outputs
+*.pkl
+*.joblib
+*.h5
+*.model
+*.bin
+models/saved_models/
+output/
+results/
+checkpoints/
+
+# Logs and Monitoring
+*.log
+logs/
+.logs/
+*.out
+*.err
+
+# Testing and Coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.pytest_cache/
+.cache/
+nosetests.xml
+coverage/
+
+# Documentation
+docs/_build/
+site/
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Temporary Files
+*.tmp
+*.temp
+*.bak
+*.backup
+*~
+.#*
+#*#
+
+# Package Files
+*.tar.gz
+*.zip
+*.rar
+*.7z
+
+# Matplotlib/Seaborn cache
+.matplotlib/
+.cache/matplotlib/
