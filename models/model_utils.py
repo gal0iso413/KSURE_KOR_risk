@@ -5,6 +5,12 @@ This module provides utilities for data processing, handling imbalanced data,
 and comprehensive model evaluation with visualization capabilities.
 """
 
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for Windows compatibility
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+import seaborn as sns
+
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, Tuple, Optional, List, Union
@@ -29,11 +35,15 @@ from src.utils.common import (
 )
 from src.constants import (
     ACCIDENT_SEVERITY_MAPPING, DEFAULT_RANDOM_STATE, SMOTE_SAMPLING_STRATEGY,
-    DEFAULT_VISUALIZATION_FIGSIZE, DEFAULT_TOP_N_FEATURES
+    DEFAULT_VISUALIZATION_FIGSIZE, DEFAULT_TOP_N_FEATURES, KOREAN_FONT_FAMILY
 )
 
 # Initialize logger
 logger = get_logger(__name__)
+
+# Configure Korean font support
+plt.rcParams['font.family'] = KOREAN_FONT_FAMILY
+plt.rcParams['axes.unicode_minus'] = False  # Fix minus sign display issue
 
 
 class DataProcessor:

@@ -342,11 +342,12 @@ def run_training_step(input_path: str, config: PipelineConfig) -> Dict[str, Any]
     
     results = train_pipeline(
         input_path=input_path,
-        model_dir=str(model_dir),
+        output_dir=str(model_dir),
         target_column=config.target_column,
-        model_type=config.model_type,
+        model_types=model_types,
         handle_imbalance=config.handle_imbalance,
-        n_splits=config.n_splits
+        test_size=config.test_size,
+        random_state=config.random_state
     )
     
     return results

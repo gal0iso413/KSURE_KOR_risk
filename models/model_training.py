@@ -268,6 +268,9 @@ class ModelTrainer:
         if hyperparameters:
             model.set_params(**hyperparameters)
         
+        # Create the actual sklearn model for cross-validation
+        sklearn_model = model.create_model()
+        
         # Perform cross-validation
         cv = StratifiedKFold(
             n_splits=cv_splits,
@@ -276,7 +279,7 @@ class ModelTrainer:
         )
         
         scores = cross_val_score(
-            model.model if hasattr(model, 'model') else model,
+            sklearn_model,
             X, y,
             cv=cv,
             scoring=scoring,

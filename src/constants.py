@@ -26,12 +26,12 @@ TESTS_DIR = PROJECT_ROOT / "tests"
 # ============================================================================
 
 # Default column configurations
-DEFAULT_DATE_COLUMNS: List[str] = ['frdate', 'accdate']
-DEFAULT_DATE_FORMAT: str = '%Y%m%d'
+DEFAULT_DATE_COLUMNS: List[str] = ['재무제표결산날짜', '사고접수날짜']
+DEFAULT_DATE_FORMAT: str = '%Y-%m-%d'
 
 # Default preprocessing parameters
 DEFAULT_OUTLIER_METHOD: str = 'iqr'
-DEFAULT_OUTLIER_THRESHOLD: float = 1.5
+DEFAULT_OUTLIER_THRESHOLD: float = 3.0
 DEFAULT_ZSCORE_THRESHOLD: float = 3.0
 
 # Default scaling and encoding
@@ -77,28 +77,19 @@ DEFAULT_CV_STRATIFY: bool = True
 # Note: These should be updated based on actual accident codes in your data
 ACCIDENT_SEVERITY_MAPPING: Dict[str, int] = {
     # Low severity examples
-    'MINOR': 0,
-    'LIGHT': 0,
-    'SMALL': 0,
-    '경미': 0,
+    '210': 0,
     
     # Medium severity examples  
-    'MODERATE': 1,
-    'MEDIUM': 1,
-    'NORMAL': 1,
-    '보통': 1,
+    '701': 1,
+    '703': 1,
     
     # High severity examples
-    'SEVERE': 2,
-    'MAJOR': 2,
-    'CRITICAL': 2,
-    'HEAVY': 2,
-    '심각': 2,
-    '중대': 2,
+    '705': 2,
+    '707': 2
 }
 
 # Default severity level for unmapped codes
-DEFAULT_SEVERITY_LEVEL: int = 0
+DEFAULT_SEVERITY_LEVEL: int = -1
 
 # ============================================================================
 # FEATURE ENGINEERING CONSTANTS
@@ -155,6 +146,13 @@ DEFAULT_PREDICTION_THRESHOLD: float = 0.5
 DEFAULT_VISUALIZATION_FIGSIZE: Tuple[int, int] = (10, 8)
 DEFAULT_DPI: int = 300
 DEFAULT_PLOT_STYLE: str = 'seaborn-v0_8'
+
+# Korean font support
+KOREAN_FONT_FAMILY: str = 'NanumGothic'
+KOREAN_FONT_FALLBACKS: List[str] = [
+    'NanumGothic', 'Malgun Gothic', 'AppleGothic', 
+    'Noto Sans CJK KR', 'DejaVu Sans'
+]
 
 # Color schemes
 DEFAULT_COLOR_PALETTE: List[str] = [

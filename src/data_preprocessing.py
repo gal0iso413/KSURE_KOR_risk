@@ -10,6 +10,7 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from typing import Union, List, Dict, Optional, Tuple
 from pathlib import Path
+import re
 
 # Import project utilities and constants
 from utils.logging_config import get_logger
@@ -25,6 +26,34 @@ from constants import (
 
 # Initialize logger
 logger = get_logger(__name__)
+
+
+# ============================================================================
+# UTILITY FUNCTIONS FOR COLUMN NAME CLEANING
+# ============================================================================
+
+def clean_column_name_for_matching(column_name: str) -> str:
+    """
+    Apply the same column cleaning logic as clean_column_names() for consistent matching.
+    
+    This ensures that column names provided in configuration match the cleaned DataFrame columns.
+    """
+    cleaned = (column_name
+               .strip()
+               .replace(' ', '_'))  # First replace spaces with underscores
+    
+    # Remove special characters (including (*), !, @, etc.) - same as clean_column_names
+    cleaned = re.sub(r'[^\w\s]', '', cleaned)
+    
+    # Replace any remaining spaces with underscores and convert to lowercase
+    cleaned = cleaned.replace(' ', '_').lower()
+    
+    return cleaned
+
+
+def clean_column_list_for_matching(columns: List[str]) -> List[str]:
+    """Clean a list of column names using the same logic as clean_column_names()."""
+    return [clean_column_name_for_matching(col) for col in columns] if columns else []
 
 
 class DataValidator:
@@ -143,13 +172,29 @@ class DataCleaner:
     
     def _handle_missing_values(self, df: pd.DataFrame, numeric_columns: Optional[List[str]]) -> pd.DataFrame:
         """Handle missing values using appropriate strategies."""
+        logger.info("Starting missing value handling...")
+        
         if numeric_columns:
-            valid_numeric = DataValidator.validate_numeric_columns(df, numeric_columns)
-            df = self._fill_numeric_missing(df, valid_numeric)
+            # Use ONLY the specified columns (no auto-detection)
+            cleaned_numeric_columns = clean_column_list_for_matching(numeric_columns)
+            valid_numeric = DataValidator.validate_numeric_columns(df, cleaned_numeric_columns)
+            if valid_numeric:
+                logger.info(f"Processing additional specified numeric columns: {valid_numeric}")
+                df = self._fill_numeric_missing(df, valid_numeric)
+        else:
+            # Auto-detect ONLY when no columns specified
+            all_numeric_cols = df.select_dtypes(include=['int64', 'int32', 'float64', 'float32']).columns.tolist()
+            numeric_with_missing = [col for col in all_numeric_cols if df[col].isnull().any()]
+            if numeric_with_missing:
+                logger.info(f"Auto-detected {len(numeric_with_missing)} numeric columns with missing values: {numeric_with_missing}")
+                df = self._fill_numeric_missing(df, numeric_with_missing)
         
         # Handle categorical missing values
         categorical_columns = df.select_dtypes(include=['object']).columns
-        df = self._fill_categorical_missing(df, categorical_columns.tolist())
+        categorical_with_missing = [col for col in categorical_columns if df[col].isnull().any()]
+        if categorical_with_missing:
+            logger.info(f"Found {len(categorical_with_missing)} categorical columns with missing values: {categorical_with_missing}")
+            df = self._fill_categorical_missing(df, categorical_with_missing.tolist())
         
         return df
     
@@ -219,7 +264,22 @@ class OutlierHandler:
         DataValidator.validate_dataframe(df)
         df = df.copy()
         
-        valid_columns = DataValidator.validate_numeric_columns(df, columns)
+        logger.info("Starting outlier handling...")
+        
+        if columns:  # If columns specified, use ONLY those
+            cleaned_provided_columns = clean_column_list_for_matching(columns)
+            columns_to_handle = [col for col in cleaned_provided_columns if col in df.columns]
+        else:  # If no columns specified, auto-detect ALL numeric
+            columns_to_handle = df.select_dtypes(include=['int64', 'int32', 'float64', 'float32']).columns.tolist()
+        
+        # Validate that they are actually numeric
+        valid_columns = DataValidator.validate_numeric_columns(df, columns_to_handle)
+        
+        if not valid_columns:
+            logger.warning("No valid numeric columns found for outlier handling")
+            return df
+        
+        logger.info(f"Handling outliers in {len(valid_columns)} numeric columns: {valid_columns}")
         
         for col in valid_columns:
             if method == 'iqr':
@@ -278,6 +338,10 @@ class DataTransformer:
     
     def __init__(self):
         self.scalers: Dict[str, Union[StandardScaler, MinMaxScaler]] = {}
+
+    def _clean_column_list(self, columns: List[str]) -> List[str]:
+        """Clean a list of column names using the global utility function."""
+        return clean_column_list_for_matching(columns)
     
     @standardize_error_handling
     def transform_data(
@@ -316,11 +380,22 @@ class DataTransformer:
     
     def _scale_numeric_features(self, df: pd.DataFrame, columns: List[str], scaler_type: str) -> pd.DataFrame:
         """Scale numeric features using specified scaler."""
-        valid_columns = DataValidator.validate_numeric_columns(df, columns)
+        logger.info("Starting numeric feature scaling...")
+        
+        if columns:  # If columns specified, use ONLY those
+            cleaned_provided_columns = self._clean_column_list(columns)
+            columns_to_scale = [col for col in cleaned_provided_columns if col in df.columns]
+        else:  # If no columns specified, auto-detect ALL numeric
+            columns_to_scale = df.select_dtypes(include=['int64', 'int32', 'float64', 'float32']).columns.tolist()
+        
+        # Validate that they are actually numeric
+        valid_columns = DataValidator.validate_numeric_columns(df, columns_to_scale)
         
         if not valid_columns:
             logger.warning("No valid numeric columns found for scaling")
             return df
+        
+        logger.info(f"Scaling {len(valid_columns)} numeric columns: {valid_columns}")
         
         # Create scaler
         if scaler_type == 'standard':
@@ -335,17 +410,31 @@ class DataTransformer:
         df[valid_columns] = scaler.fit_transform(df[valid_columns])
         self.scalers['numeric'] = scaler
         
-        logger.info(f"Scaled {len(valid_columns)} numeric columns using {scaler_type} scaler")
+        logger.info(f"Successfully scaled {len(valid_columns)} numeric columns using {scaler_type} scaler")
         
         return df
     
     def _encode_categorical_features(self, df: pd.DataFrame, columns: List[str], encoding_method: str) -> pd.DataFrame:
         """Encode categorical features using specified method."""
-        valid_columns = DataValidator.validate_columns_exist(df, columns, "categorical")
+        logger.info("Starting categorical feature encoding...")
+        
+        # Auto-detect all categorical columns
+        all_categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+        
+        # Clean the provided column names to match the cleaned DataFrame columns
+        cleaned_provided_columns = self._clean_column_list(columns)
+        
+        # Combine auto-detected with cleaned provided columns (remove duplicates)
+        columns_to_encode = list(set(all_categorical_cols + [col for col in cleaned_provided_columns if col in df.columns]))
+        
+        # Validate that specified columns actually exist
+        valid_columns = DataValidator.validate_columns_exist(df, columns_to_encode, "categorical")
         
         if not valid_columns:
             logger.warning("No valid categorical columns found for encoding")
             return df
+        
+        logger.info(f"Encoding {len(valid_columns)} categorical columns: {valid_columns}")
         
         if encoding_method == 'onehot':
             # Get original column count
