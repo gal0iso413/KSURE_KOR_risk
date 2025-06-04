@@ -68,6 +68,12 @@ class PipelineConfig:
         self.handle_imbalance = args.handle_imbalance
         self.n_splits = args.n_splits
         
+        # Hyperparameter optimization parameters
+        self.optimize_hyperparameters = args.optimize_hyperparameters
+        self.search_method = args.search_method
+        self.search_cv = args.search_cv
+        self.search_n_iter = args.search_n_iter
+        
         self._validate_config()
     
     def _parse_interaction_features(self, interaction_features: Optional[list]) -> Optional[list]:
@@ -255,6 +261,29 @@ def _add_model_arguments(parser: argparse.ArgumentParser) -> None:
         default=DEFAULT_CV_SPLITS,
         help='Number of cross-validation splits'
     )
+    models.add_argument(
+        '--optimize-hyperparameters',
+        action='store_true',
+        help='Perform hyperparameter optimization'
+    )
+    models.add_argument(
+        '--search-method',
+        choices=['grid', 'random'],
+        default='grid',
+        help='Hyperparameter search method'
+    )
+    models.add_argument(
+        '--search-cv',
+        type=int,
+        default=3,
+        help='Number of CV folds for hyperparameter search'
+    )
+    models.add_argument(
+        '--search-n-iter',
+        type=int,
+        default=50,
+        help='Number of iterations for random search'
+    )
 
 
 def load_config_from_file(args: argparse.Namespace) -> argparse.Namespace:
@@ -344,10 +373,14 @@ def run_training_step(input_path: str, config: PipelineConfig) -> Dict[str, Any]
         input_path=input_path,
         output_dir=str(model_dir),
         target_column=config.target_column,
-        model_types=model_types,
+        model_types=config.model_type,
         handle_imbalance=config.handle_imbalance,
         test_size=config.test_size,
-        random_state=config.random_state
+        random_state=config.random_state,
+        optimize_hyperparameters=config.optimize_hyperparameters,
+        search_method=config.search_method,
+        search_cv=config.search_cv,
+        search_n_iter=config.search_n_iter
     )
     
     return results

@@ -11,6 +11,7 @@ from typing import Dict, Any, Optional, List, Union, Tuple
 from pathlib import Path
 
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from sklearn.metrics import accuracy_score, f1_score
 
 # Import project utilities and constants
@@ -25,7 +26,8 @@ from src.utils.common import (
 from src.constants import (
     DEFAULT_RANDOM_STATE, DEFAULT_TEST_SIZE, DEFAULT_CV_SPLITS, 
     DEFAULT_CV_SCORING, DEFAULT_CV_SHUFFLE, DEFAULT_IMBALANCE_METHOD,
-    AVAILABLE_MODEL_TYPES, DEFAULT_ENCODING
+    AVAILABLE_MODEL_TYPES, DEFAULT_ENCODING, HYPERPARAMETER_SEARCH_SPACES,
+    DEFAULT_SEARCH_METHOD, DEFAULT_SEARCH_CV, DEFAULT_SEARCH_N_ITER
 )
 
 # Import model components
@@ -300,6 +302,117 @@ class ModelTrainer:
         return cv_results
     
     @standardize_error_handling
+    def hyperparameter_search(
+        self,
+        model_type: str,
+        X_train: np.ndarray,
+        y_train: np.ndarray,
+        search_method: str = DEFAULT_SEARCH_METHOD,
+        cv_splits: int = DEFAULT_SEARCH_CV,
+        n_iter: int = DEFAULT_SEARCH_N_ITER,
+        scoring: str = DEFAULT_CV_SCORING,
+        custom_param_grid: Optional[Dict[str, Any]] = None
+    ) -> Tuple[Any, Dict[str, Any]]:
+        """
+        Perform hyperparameter search for a model.
+        
+        Args:
+            model_type: Type of model to optimize
+            X_train: Training features
+            y_train: Training target
+            search_method: Search method ('grid', 'random', 'bayesian')
+            cv_splits: Number of cross-validation splits
+            n_iter: Number of iterations for random/bayesian search
+            scoring: Scoring metric for optimization
+            custom_param_grid: Custom parameter grid (overrides default)
+            
+        Returns:
+            best_model, search_results
+        """
+        if model_type not in AVAILABLE_MODEL_TYPES:
+            raise ValueError(f"Unknown model type '{model_type}'. "
+                           f"Available types: {AVAILABLE_MODEL_TYPES}")
+        
+        logger.info(f"Starting {search_method} hyperparameter search for {model_type}")
+        
+        # Get base model
+        base_model = self.model_factory.get_model(model_type, self.random_state)
+        sklearn_model = base_model.create_model()
+        
+        # Get parameter grid
+        if custom_param_grid:
+            param_grid = custom_param_grid
+            logger.info(f"Using custom parameter grid: {param_grid}")
+        else:
+            param_grid = HYPERPARAMETER_SEARCH_SPACES.get(model_type, {})
+            if not param_grid:
+                logger.warning(f"No default parameter grid found for {model_type}")
+                return base_model, {'warning': 'No parameter grid available'}
+            logger.info(f"Using default parameter grid with {len(param_grid)} parameters")
+        
+        # Create cross-validation strategy
+        cv = StratifiedKFold(
+            n_splits=cv_splits,
+            shuffle=True,
+            random_state=self.random_state
+        )
+        
+        # Perform hyperparameter search
+        if search_method.lower() == 'grid':
+            search = GridSearchCV(
+                estimator=sklearn_model,
+                param_grid=param_grid,
+                cv=cv,
+                scoring=scoring,
+                n_jobs=-1,
+                verbose=1,
+                return_train_score=True
+            )
+        elif search_method.lower() == 'random':
+            search = RandomizedSearchCV(
+                estimator=sklearn_model,
+                param_distributions=param_grid,
+                n_iter=n_iter,
+                cv=cv,
+                scoring=scoring,
+                n_jobs=-1,
+                verbose=1,
+                random_state=self.random_state,
+                return_train_score=True
+            )
+        else:
+            raise ValueError(f"Unsupported search method: {search_method}. "
+                           f"Supported methods: 'grid', 'random'")
+        
+        # Fit the search
+        logger.info(f"Fitting {search_method} search with {cv_splits}-fold CV...")
+        search.fit(X_train, y_train)
+        
+        # Extract results
+        best_model = search.best_estimator_
+        
+        search_results = {
+            'best_score': search.best_score_,
+            'best_params': search.best_params_,
+            'cv_results': {
+                'mean_test_scores': search.cv_results_['mean_test_score'].tolist(),
+                'std_test_scores': search.cv_results_['std_test_score'].tolist(),
+                'mean_train_scores': search.cv_results_['mean_train_score'].tolist(),
+                'std_train_scores': search.cv_results_['std_train_score'].tolist(),
+                'params': search.cv_results_['params']
+            },
+            'search_method': search_method,
+            'cv_splits': cv_splits,
+            'scoring': scoring,
+            'n_candidates': len(search.cv_results_['params'])
+        }
+        
+        logger.info(f"Best {model_type} score: {search.best_score_:.4f}")
+        logger.info(f"Best {model_type} params: {search.best_params_}")
+        
+        return best_model, search_results
+    
+    @standardize_error_handling
     def train_multiple_models(
         self,
         data: pd.DataFrame,
@@ -308,7 +421,11 @@ class ModelTrainer:
         feature_columns: Optional[List[str]] = None,
         handle_imbalance: str = DEFAULT_IMBALANCE_METHOD,
         perform_cv: bool = True,
-        save_models: bool = True
+        save_models: bool = True,
+        optimize_hyperparameters: bool = False,
+        search_method: str = DEFAULT_SEARCH_METHOD,
+        search_cv: int = DEFAULT_SEARCH_CV,
+        search_n_iter: int = DEFAULT_SEARCH_N_ITER
     ) -> Dict[str, Any]:
         """
         Train and evaluate multiple models.
@@ -321,6 +438,10 @@ class ModelTrainer:
             handle_imbalance: Method to handle class imbalance
             perform_cv: Whether to perform cross-validation
             save_models: Whether to save trained models
+            optimize_hyperparameters: Whether to perform hyperparameter search
+            search_method: Hyperparameter search method ('grid', 'random')
+            search_cv: Number of CV folds for hyperparameter search
+            search_n_iter: Number of iterations for random search
             
         Returns:
             Comprehensive results for all models
@@ -359,6 +480,7 @@ class ModelTrainer:
         trained_models = {}
         evaluation_results = {}
         cv_results = {}
+        hyperparameter_results = {}
         
         # Train each model type
         for model_type in model_types:
@@ -369,9 +491,26 @@ class ModelTrainer:
                 model_dir = self.output_dir / model_type
                 create_directory_if_not_exists(model_dir, f"{model_type} model directory")
                 
-                # Train model
-                class_weights = getattr(self, 'class_weights', None)
-                model = self.train_single_model(model_type, X_train, y_train, class_weights=class_weights)
+                # Train model with optional hyperparameter optimization
+                if optimize_hyperparameters:
+                    logger.info(f"Performing hyperparameter search for {model_type}...")
+                    optimized_model, search_results = self.hyperparameter_search(
+                        model_type=model_type,
+                        X_train=X_train,
+                        y_train=y_train,
+                        search_method=search_method,
+                        cv_splits=search_cv,
+                        n_iter=search_n_iter
+                    )
+                    # Wrap the sklearn model in our model class
+                    model = self.model_factory.get_model(model_type, self.random_state)
+                    model.model = optimized_model
+                    hyperparameter_results[model_type] = search_results
+                else:
+                    # Train with default hyperparameters
+                    class_weights = getattr(self, 'class_weights', None)
+                    model = self.train_single_model(model_type, X_train, y_train, class_weights=class_weights)
+                
                 trained_models[model_type] = model
                 
                 # Save model if requested
@@ -398,6 +537,8 @@ class ModelTrainer:
         results['models'] = evaluation_results
         if cv_results:
             results['cross_validation'] = cv_results
+        if hyperparameter_results:
+            results['hyperparameter_search'] = hyperparameter_results
         
         # Generate model comparison
         if len(evaluation_results) > 1:
@@ -420,7 +561,11 @@ def train_pipeline(
     test_size: float = DEFAULT_TEST_SIZE,
     random_state: int = DEFAULT_RANDOM_STATE,
     perform_cv: bool = True,
-    save_models: bool = True
+    save_models: bool = True,
+    optimize_hyperparameters: bool = False,
+    search_method: str = DEFAULT_SEARCH_METHOD,
+    search_cv: int = DEFAULT_SEARCH_CV,
+    search_n_iter: int = DEFAULT_SEARCH_N_ITER
 ) -> Dict[str, Any]:
     """
     Complete model training pipeline function.
@@ -436,6 +581,10 @@ def train_pipeline(
         random_state: Random seed for reproducibility
         perform_cv: Whether to perform cross-validation
         save_models: Whether to save trained models
+        optimize_hyperparameters: Whether to perform hyperparameter search
+        search_method: Hyperparameter search method
+        search_cv: Number of CV folds for hyperparameter search
+        search_n_iter: Number of iterations for random search
         
     Returns:
         Comprehensive training results
@@ -463,7 +612,11 @@ def train_pipeline(
         feature_columns=feature_columns,
         handle_imbalance=handle_imbalance,
         perform_cv=perform_cv,
-        save_models=save_models
+        save_models=save_models,
+        optimize_hyperparameters=optimize_hyperparameters,
+        search_method=search_method,
+        search_cv=search_cv,
+        search_n_iter=search_n_iter
     )
     
     logger.info("Model training pipeline completed successfully")

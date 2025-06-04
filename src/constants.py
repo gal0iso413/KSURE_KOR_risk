@@ -203,8 +203,70 @@ DEFAULT_SEARCH_METHOD: str = 'grid'  # 'grid', 'random', 'bayesian'
 DEFAULT_SEARCH_CV: int = 3
 DEFAULT_SEARCH_N_ITER: int = 50
 
+# Search method options
+AVAILABLE_SEARCH_METHODS: List[str] = ['grid', 'random']
+SEARCH_METHOD_DESCRIPTIONS: Dict[str, str] = {
+    'grid': 'Exhaustive search over all parameter combinations',
+    'random': 'Random sampling of parameter combinations'
+}
+
+# Performance recommendations for different search spaces
+SEARCH_COMPLEXITY_ESTIMATES: Dict[str, Dict[str, int]] = {
+    'lr': {'grid_combinations': 84, 'fast_combinations': 24},
+    'rf': {'grid_combinations': 2160, 'fast_combinations': 144},
+    'xgboost': {'grid_combinations': 5040, 'fast_combinations': 72}
+}
+
+# Recommended settings by data size
+HYPERPARAMETER_RECOMMENDATIONS: Dict[str, Dict[str, Any]] = {
+    'small_data': {  # < 10k samples
+        'search_method': 'grid',
+        'search_cv': 5,
+        'use_fast_spaces': True
+    },
+    'medium_data': {  # 10k - 100k samples
+        'search_method': 'random',
+        'search_cv': 3,
+        'search_n_iter': 50,
+        'use_fast_spaces': False
+    },
+    'large_data': {  # > 100k samples
+        'search_method': 'random',
+        'search_cv': 3,
+        'search_n_iter': 25,
+        'use_fast_spaces': True
+    }
+}
+
 # Search spaces for models
 HYPERPARAMETER_SEARCH_SPACES: Dict[str, Dict[str, Any]] = {
+    'lr': {
+        'C': [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0],
+        'solver': ['lbfgs', 'liblinear', 'newton-cg'],
+        'max_iter': [1000, 2000, 3000],
+        'penalty': ['l2']  # l1 only supported by liblinear
+    },
+    'rf': {
+        'n_estimators': [50, 100, 200, 300, 500],
+        'max_depth': [None, 5, 10, 15, 20, 30],
+        'min_samples_split': [2, 5, 10, 15, 20],
+        'min_samples_leaf': [1, 2, 4, 6, 8],
+        'max_features': ['sqrt', 'log2', None],
+        'bootstrap': [True, False]
+    },
+    'xgboost': {
+        'n_estimators': [50, 100, 200, 300, 500],
+        'max_depth': [3, 4, 5, 6, 8, 10],
+        'learning_rate': [0.01, 0.05, 0.1, 0.15, 0.2, 0.3],
+        'subsample': [0.7, 0.8, 0.9, 1.0],
+        'colsample_bytree': [0.7, 0.8, 0.9, 1.0],
+        'reg_alpha': [0, 0.1, 0.5, 1.0],
+        'reg_lambda': [0, 0.1, 0.5, 1.0]
+    }
+}
+
+# Smaller search spaces for faster hyperparameter optimization
+HYPERPARAMETER_SEARCH_SPACES_FAST: Dict[str, Dict[str, Any]] = {
     'lr': {
         'C': [0.1, 1.0, 10.0, 100.0],
         'solver': ['lbfgs', 'liblinear'],
