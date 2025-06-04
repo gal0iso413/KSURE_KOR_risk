@@ -7,7 +7,7 @@ logistic regression, random forest, and XGBoost classifiers.
 
 from abc import ABC, abstractmethod
 import numpy as np
-from typing import Dict, Any, Type, Union, Optional
+from typing import Dict, Any, Type, Union, Optional, List
 from pathlib import Path
 import joblib
 

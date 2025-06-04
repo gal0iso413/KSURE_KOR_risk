@@ -7,15 +7,13 @@ error handling, and other common tasks used throughout the project.
 
 import os
 import time
-import resource  # Built-in Python module for system resource info
-import gc  # Built-in garbage collection module
 from pathlib import Path
 from typing import List, Optional, Union, Any, Callable
 from functools import wraps
 import pandas as pd
 
 from .logging_config import get_logger
-from ..constants import (
+from constants import (
     DEFAULT_ENCODING, SUPPORTED_DATA_FORMATS, MIN_ROWS_THRESHOLD,
     MAX_MISSING_RATIO, MEMORY_USAGE_THRESHOLD, PROCESSING_TIME_THRESHOLD
 )
@@ -313,119 +311,6 @@ def validate_columns_exist(df: pd.DataFrame, columns: List[str], column_type: st
 
 
 # ============================================================================
-# PERFORMANCE MONITORING (Using Built-in Python Modules)
-# ============================================================================
-
-def get_memory_usage() -> dict:
-    """
-    Get current memory usage using built-in Python modules.
-    
-    Returns:
-        Dictionary with memory information
-    """
-    try:
-        # Use resource module (built-in) on Unix systems
-        if hasattr(resource, 'getrusage'):
-            usage = resource.getrusage(resource.RUSAGE_SELF)
-            # ru_maxrss is in kilobytes on Linux, bytes on macOS
-            import sys
-            if sys.platform == 'darwin':  # macOS
-                memory_mb = usage.ru_maxrss / (1024 * 1024)
-            else:  # Linux
-                memory_mb = usage.ru_maxrss / 1024
-            
-            return {
-                'memory_mb': memory_mb,
-                'user_time': usage.ru_utime,
-                'system_time': usage.ru_stime
-            }
-    except Exception:
-        pass
-    
-    # Fallback: Try to get basic info from garbage collector
-    try:
-        gc.collect()  # Force garbage collection
-        total_objects = len(gc.get_objects())
-        return {
-            'memory_mb': 0,  # Not available
-            'total_objects': total_objects,
-            'user_time': 0,
-            'system_time': 0
-        }
-    except Exception:
-        return {
-            'memory_mb': 0,
-            'total_objects': 0,
-            'user_time': 0,
-            'system_time': 0
-        }
-
-
-def monitor_memory_usage(func: Callable) -> Callable:
-    """
-    Decorator to monitor memory usage of functions using built-in modules.
-    
-    Args:
-        func: Function to monitor
-        
-    Returns:
-        Wrapped function with memory monitoring
-    """
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        # Memory before
-        memory_before = get_memory_usage()
-        
-        # Execute function
-        result = func(*args, **kwargs)
-        
-        # Memory after
-        memory_after = get_memory_usage()
-        
-        # Calculate differences
-        if memory_before['memory_mb'] > 0 and memory_after['memory_mb'] > 0:
-            memory_diff = memory_after['memory_mb'] - memory_before['memory_mb']
-            logger.info(f"Memory usage in {func.__name__}: {memory_after['memory_mb']:.1f}MB "
-                       f"(Δ{memory_diff:+.1f}MB)")
-        else:
-            logger.info(f"Memory monitoring in {func.__name__}: "
-                       f"Objects: {memory_after.get('total_objects', 'N/A')}")
-        
-        return result
-    
-    return wrapper
-
-
-def monitor_execution_time(func: Callable) -> Callable:
-    """
-    Decorator to monitor execution time of functions.
-    
-    Args:
-        func: Function to monitor
-        
-    Returns:
-        Wrapped function with time monitoring
-    """
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        start_time = time.time()
-        
-        result = func(*args, **kwargs)
-        
-        execution_time = time.time() - start_time
-        
-        # Warning for long-running functions
-        if execution_time > PROCESSING_TIME_THRESHOLD:
-            logger.warning(f"Long execution time in {func.__name__}: {execution_time:.2f}s")
-        
-        logger.info(f"Execution time for {func.__name__}: {execution_time:.2f}s")
-        
-        return result
-    
-    return wrapper
-
-
-# ============================================================================
 # DATA PROCESSING UTILITIES
 # ============================================================================
 
@@ -473,7 +358,7 @@ def clean_column_names(df: pd.DataFrame, inplace: bool = False) -> pd.DataFrame:
 
 def get_memory_usage_summary(df: pd.DataFrame) -> dict:
     """
-    Get detailed memory usage summary for DataFrame.
+    Get basic memory usage summary for DataFrame.
     
     Args:
         df: DataFrame to analyze
@@ -484,16 +369,9 @@ def get_memory_usage_summary(df: pd.DataFrame) -> dict:
     memory_usage = df.memory_usage(deep=True)
     total_memory_mb = memory_usage.sum() / (1024 * 1024)
     
-    # Memory by data type
-    dtype_memory = {}
-    for dtype in df.dtypes.unique():
-        cols_of_dtype = df.select_dtypes(include=[dtype]).columns
-        dtype_memory[str(dtype)] = memory_usage[cols_of_dtype].sum() / (1024 * 1024)
-    
     return {
         'total_memory_mb': total_memory_mb,
         'memory_per_row_kb': (total_memory_mb * 1024) / len(df) if len(df) > 0 else 0,
-        'memory_by_dtype': dtype_memory,
         'shape': df.shape
     }
 

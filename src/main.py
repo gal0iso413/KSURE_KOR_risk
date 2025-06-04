@@ -31,7 +31,7 @@ from utils.common import (
 from data_preprocessing import preprocess_pipeline
 from feature_engineering import engineer_features
 from models.model_training import train_pipeline
-from evaluate import evaluate_pipeline
+from evaluate import evaluate_model_pipeline
 
 # Initialize logger
 logger = get_logger(__name__)
@@ -364,7 +364,7 @@ def run_evaluation_step(config: PipelineConfig) -> Dict[str, Any]:
     # Validate model file exists
     validate_file_exists(model_path, "Trained model file")
     
-    results = evaluate_pipeline(
+    results = evaluate_model_pipeline(
         model_path=model_path,
         test_data_path=config.input_path,
         target_column=config.target_column,

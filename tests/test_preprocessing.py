@@ -25,7 +25,7 @@ from src.utils.common import (
     standardize_error_handling, safe_execute
 )
 from src.utils.logging_config import (
-    get_logger, setup_logger, ColoredFormatter, PerformanceFilter
+    get_logger, setup_logger, ColoredFormatter
 )
 from src.constants import (
     DEFAULT_ENCODING, SUPPORTED_DATA_FORMATS, MIN_ROWS_THRESHOLD, 
@@ -475,28 +475,6 @@ class TestLogging(unittest.TestCase):
         formatted = formatter.format(record)
         self.assertIsInstance(formatted, str)
         self.assertIn('Test message', formatted)
-    
-    def test_performance_filter(self):
-        """Test performance filter."""
-        perf_filter = PerformanceFilter()
-        
-        # Create test log record
-        record = logging.LogRecord(
-            name='test',
-            level=logging.INFO,
-            pathname='test.py',
-            lineno=1,
-            msg='Test message',
-            args=(),
-            exc_info=None
-        )
-        
-        result = perf_filter.filter(record)
-        self.assertTrue(result)
-        
-        # Check if performance attributes were added
-        self.assertTrue(hasattr(record, 'memory_mb'))
-        self.assertTrue(hasattr(record, 'cpu_time'))
 
 
 class TestErrorHandling(unittest.TestCase):

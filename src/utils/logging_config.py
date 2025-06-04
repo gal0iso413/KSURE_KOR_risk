@@ -12,8 +12,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
+import warnings
 
-from ..constants import (
+from constants import (
     DEFAULT_LOG_LEVEL, DEFAULT_LOG_FORMAT, DEFAULT_LOG_DATE_FORMAT,
     LOG_FILE_MAX_SIZE, LOG_BACKUP_COUNT, LOG_FILE_ENCODING, LOGS_DIR
 )
@@ -40,37 +41,6 @@ class ColoredFormatter(logging.Formatter):
         return super().format(record)
 
 
-class PerformanceFilter(logging.Filter):
-    """Filter to add performance information to log records using built-in modules."""
-    
-    def filter(self, record):
-        # Add performance information if available using built-in modules
-        try:
-            import resource
-            import sys
-            
-            if hasattr(resource, 'getrusage'):
-                usage = resource.getrusage(resource.RUSAGE_SELF)
-                
-                # Memory usage (ru_maxrss)
-                if sys.platform == 'darwin':  # macOS - bytes
-                    record.memory_mb = usage.ru_maxrss / (1024 * 1024)
-                else:  # Linux - kilobytes
-                    record.memory_mb = usage.ru_maxrss / 1024
-                
-                # CPU time
-                record.cpu_time = usage.ru_utime + usage.ru_stime
-            else:
-                record.memory_mb = 0
-                record.cpu_time = 0
-        except (ImportError, Exception):
-            # Fallback values if resource module not available
-            record.memory_mb = 0
-            record.cpu_time = 0
-        
-        return True
-
-
 def setup_logger(
     name: str,
     log_dir: Optional[str] = None,
@@ -78,7 +48,6 @@ def setup_logger(
     console_output: bool = True,
     file_output: bool = True,
     colored_console: bool = True,
-    performance_info: bool = False,
     max_file_size: int = LOG_FILE_MAX_SIZE,
     backup_count: int = LOG_BACKUP_COUNT
 ) -> logging.Logger:
@@ -92,7 +61,6 @@ def setup_logger(
         console_output: Whether to output to console
         file_output: Whether to output to file
         colored_console: Whether to use colored output in console
-        performance_info: Whether to include performance information
         max_file_size: Maximum size of log file before rotation
         backup_count: Number of backup files to keep
         
@@ -114,11 +82,6 @@ def setup_logger(
     # Create formatters
     console_formatter = _create_console_formatter(colored_console)
     file_formatter = _create_file_formatter()
-    
-    # Add performance filter if requested
-    if performance_info:
-        perf_filter = PerformanceFilter()
-        logger.addFilter(perf_filter)
     
     # Console handler
     if console_output:
