@@ -91,21 +91,32 @@ class DataProcessor:
     @standardize_error_handling
     def validate_features_and_target(
         X: Union[pd.DataFrame, np.ndarray], 
-        y: Union[pd.Series, np.ndarray]
+        y: Union[pd.Series, np.ndarray],
+        feature_columns: Optional[List[str]] = None
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Validate features and target arrays.
         
         Args:
-            X: Feature matrix
+            X: Feature matrix or full DataFrame
             y: Target vector
+            feature_columns: List of specific columns to use as features (if X is DataFrame)
             
         Returns:
             Validated X and y as numpy arrays
         """
-        # Convert to numpy arrays
+        # Convert to numpy arrays, using only specified feature columns if provided
         if isinstance(X, pd.DataFrame):
-            X = X.values
+            if feature_columns is not None:
+                # Use only the specified feature columns
+                available_features = [col for col in feature_columns if col in X.columns]
+                if len(available_features) != len(feature_columns):
+                    missing = set(feature_columns) - set(available_features)
+                    logger.warning(f"Missing feature columns: {missing}")
+                logger.info(f"Using {len(available_features)} feature columns for training")
+                X = X[available_features].values
+            else:
+                X = X.values
         if isinstance(y, pd.Series):
             y = y.values
         
@@ -149,7 +160,8 @@ class ImbalanceHandler:
         X: Union[pd.DataFrame, np.ndarray],
         y: Union[pd.Series, np.ndarray],
         method: str = 'smote',
-        sampling_strategy: str = SMOTE_SAMPLING_STRATEGY
+        sampling_strategy: str = SMOTE_SAMPLING_STRATEGY,
+        feature_columns: Optional[List[str]] = None
     ) -> Union[Tuple[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray, Dict[int, float]]]:
         """
         Handle imbalanced dataset using specified method.
@@ -159,13 +171,14 @@ class ImbalanceHandler:
             y: Target vector
             method: Method to handle imbalance ('smote' or 'class_weight')
             sampling_strategy: Sampling strategy for SMOTE
+            feature_columns: List of feature column names (if X is DataFrame)
             
         Returns:
             For SMOTE: (X_resampled, y_resampled)
             For class_weight: (X, y, class_weights)
         """
         # Validate inputs
-        X, y = DataProcessor.validate_features_and_target(X, y)
+        X, y = DataProcessor.validate_features_and_target(X, y, feature_columns)
         
         # Log original class distribution
         unique, counts = np.unique(y, return_counts=True)
@@ -248,7 +261,9 @@ class ModelEvaluator:
         X_test: Union[pd.DataFrame, np.ndarray],
         y_test: Union[pd.Series, np.ndarray],
         feature_names: Optional[List[str]] = None,
-        model_name: str = "model"
+        model_name: str = "model",
+        original_test_data: Optional[pd.DataFrame] = None,
+        identifier_columns: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Comprehensive classification model evaluation.
@@ -263,8 +278,8 @@ class ModelEvaluator:
         Returns:
             Dictionary containing evaluation metrics
         """
-        # Validate inputs
-        X_test, y_test = DataProcessor.validate_features_and_target(X_test, y_test)
+        # Validate inputs - for evaluation, we assume X_test only contains feature columns
+        X_test, y_test = DataProcessor.validate_features_and_target(X_test, y_test, feature_columns=None)
         
         logger.info(f"Evaluating {model_name} model on {len(y_test)} test samples")
         
@@ -281,6 +296,10 @@ class ModelEvaluator:
         
         # Save detailed results
         self._save_evaluation_results(results, model_name)
+        
+        # Analyze top predictions for each class (if model supports probabilities)
+        if hasattr(model, 'predict_proba'):
+            self._analyze_top_predictions(model, X_test, y_test, model_name, feature_names, original_test_data, identifier_columns)
         
         self.evaluation_results[model_name] = results
         logger.info(f"Evaluation completed for {model_name}")
@@ -533,6 +552,180 @@ class ModelEvaluator:
             
         except Exception as e:
             logger.error(f"Error saving evaluation results for {model_name}: {e}")
+    
+    def _analyze_top_predictions(
+        self, 
+        model: Any, 
+        X_test: np.ndarray, 
+        y_test: np.ndarray, 
+        model_name: str,
+        feature_names: Optional[List[str]] = None,
+        original_test_data: Optional[pd.DataFrame] = None,
+        identifier_columns: Optional[List[str]] = None,
+        top_n: int = 10
+    ) -> None:
+        """
+        Analyze and save top predictions for each class (flexible for any target column).
+        
+        Args:
+            model: Trained model with probability prediction
+            X_test: Test features
+            y_test: True labels (already converted to numeric classes)
+            model_name: Name of the model
+            top_n: Number of top predictions to analyze per class
+        """
+        try:
+            logger.info(f"Analyzing top {top_n} predictions for each class - {model_name}")
+            
+            # Get predictions and probabilities
+            y_pred = model.predict(X_test)
+            y_proba = model.predict_proba(X_test)
+            
+            # Determine unique classes and their labels
+            unique_classes = sorted(np.unique(np.concatenate([y_test, y_pred])))
+            n_classes = len(unique_classes)
+            
+            # Create flexible class names based on actual classes found
+            class_names = []
+            class_labels = []
+            for i, class_num in enumerate(unique_classes):
+                class_names.append(f'Class_{class_num}_Prob')
+                class_labels.append(f'Class_{class_num}')
+            
+            logger.info(f"Found {n_classes} classes: {unique_classes}")
+            
+            # Create results DataFrame with configured identifier columns only
+            results_df = pd.DataFrame()
+            
+            if original_test_data is not None and identifier_columns:
+                # Use only the specified identifier columns from configuration
+                available_identifier_cols = []
+                for col in identifier_columns:
+                    if col in original_test_data.columns:
+                        results_df[col] = original_test_data[col].values
+                        available_identifier_cols.append(col)
+                
+                if available_identifier_cols:
+                    logger.info(f"Including {len(available_identifier_cols)} configured identifier columns: {available_identifier_cols}")
+                else:
+                    logger.warning(f"None of the configured identifier columns found in data: {identifier_columns}")
+            elif original_test_data is not None:
+                logger.info("No identifier columns specified - only showing predictions and probabilities")
+            else:
+                logger.info("No original test data available - creating minimal DataFrame")
+            
+            # Add prediction results
+            results_df['predicted_class'] = y_pred
+            results_df['true_class'] = y_test
+            
+            # Add probability columns for each class
+            for i, class_name in enumerate(class_names):
+                if i < y_proba.shape[1]:
+                    results_df[class_name] = y_proba[:, i]
+            
+            # Analyze each class
+            for i, (target_class, prob_col, class_label) in enumerate(zip(unique_classes, class_names, class_labels)):
+                if i < y_proba.shape[1]:
+                    # Get top N predictions for this class
+                    top_predictions = results_df.nlargest(top_n, prob_col).copy()
+                    top_predictions['rank'] = range(1, len(top_predictions) + 1)
+                    
+                    # Reorder columns
+                    priority_cols = ['rank', prob_col, 'predicted_class', 'true_class']
+                    other_cols = [col for col in top_predictions.columns if col not in priority_cols]
+                    final_cols = priority_cols + other_cols
+                    top_predictions = top_predictions[final_cols]
+                    
+                    # Save top predictions for this class
+                    output_path = self.output_dir / f'{model_name}_top_{top_n}_{class_label.lower()}.csv'
+                    top_predictions.to_csv(output_path, index=False, encoding='utf-8-sig')
+                    
+                    # Calculate summary statistics
+                    correct_predictions = (top_predictions['predicted_class'] == top_predictions['true_class']).sum()
+                    prob_range = f"{top_predictions[prob_col].min():.4f} - {top_predictions[prob_col].max():.4f}"
+                    
+                    logger.info(f"{model_name} - Top {top_n} {class_label}:")
+                    logger.info(f"  Probability range: {prob_range}")
+                    logger.info(f"  Correct predictions: {correct_predictions}/{top_n}")
+                    logger.info(f"  Results saved to: {output_path}")
+            
+            # Create summary report
+            self._create_prediction_analysis_report(results_df, model_name, top_n, unique_classes, class_names, class_labels)
+            
+        except Exception as e:
+            logger.error(f"Error analyzing top predictions for {model_name}: {e}")
+    
+    def _create_prediction_analysis_report(
+        self, 
+        results_df: pd.DataFrame, 
+        model_name: str, 
+        top_n: int,
+        unique_classes: List[int],
+        class_names: List[str],
+        class_labels: List[str]
+    ) -> None:
+        """Create a comprehensive prediction analysis report (flexible for any target column)."""
+        try:
+            report_path = self.output_dir / f'{model_name}_prediction_analysis_report.txt'
+            
+            with open(report_path, 'w') as f:
+                f.write(f"Prediction Analysis Report for {model_name}\n")
+                f.write("=" * 60 + "\n\n")
+                
+                # Overall statistics
+                f.write("OVERALL STATISTICS:\n")
+                f.write("-" * 20 + "\n")
+                f.write(f"Total samples analyzed: {len(results_df)}\n")
+                overall_accuracy = (results_df['predicted_class'] == results_df['true_class']).mean()
+                f.write(f"Overall accuracy: {overall_accuracy:.4f}\n")
+                f.write(f"Number of classes: {len(unique_classes)}\n")
+                f.write(f"Classes found: {unique_classes}\n\n")
+                
+                # Class distribution
+                f.write("CLASS DISTRIBUTION:\n")
+                f.write("-" * 18 + "\n")
+                for class_num in unique_classes:
+                    true_count = (results_df['true_class'] == class_num).sum()
+                    pred_count = (results_df['predicted_class'] == class_num).sum()
+                    f.write(f"Class {class_num}:\n")
+                    f.write(f"  True labels: {true_count}\n")
+                    f.write(f"  Predicted: {pred_count}\n\n")
+                
+                # Top predictions analysis for each class
+                f.write(f"TOP {top_n} PREDICTIONS ANALYSIS:\n")
+                f.write("-" * 30 + "\n")
+                
+                for target_class, prob_col, class_label in zip(unique_classes, class_names, class_labels):
+                    if prob_col in results_df.columns:
+                        # Get top N for this class
+                        top_class = results_df.nlargest(top_n, prob_col)
+                        correct_in_top = (top_class['predicted_class'] == top_class['true_class']).sum()
+                        correct_class_in_top = (top_class['true_class'] == target_class).sum()
+                        
+                        f.write(f"\n{class_label}:\n")
+                        f.write(f"  Top {top_n} probability range: {top_class[prob_col].min():.4f} - {top_class[prob_col].max():.4f}\n")
+                        f.write(f"  Correct predictions in top {top_n}: {correct_in_top}/{top_n} ({correct_in_top/top_n:.2%})\n")
+                        f.write(f"  Actual class {target_class} cases in top {top_n}: {correct_class_in_top}/{top_n} ({correct_class_in_top/top_n:.2%})\n")
+                        
+                        # Show confidence levels
+                        high_conf = (top_class[prob_col] >= 0.8).sum()
+                        med_conf = ((top_class[prob_col] >= 0.6) & (top_class[prob_col] < 0.8)).sum()
+                        low_conf = (top_class[prob_col] < 0.6).sum()
+                        
+                        f.write(f"  Confidence levels in top {top_n}:\n")
+                        f.write(f"    High (≥0.8): {high_conf}\n")
+                        f.write(f"    Medium (0.6-0.8): {med_conf}\n")
+                        f.write(f"    Low (<0.6): {low_conf}\n")
+                
+                f.write(f"\nDetailed CSV files saved for each class's top {top_n} predictions.\n")
+                f.write("Use these files to examine specific cases and improve model performance.\n")
+                f.write("\nNOTE: Classes are automatically detected from your target column data.\n")
+                f.write("The analysis works with any target column - Korean accident codes, severity levels, or custom classifications.\n")
+            
+            logger.info(f"Saved prediction analysis report: {report_path}")
+            
+        except Exception as e:
+            logger.error(f"Error creating prediction analysis report for {model_name}: {e}")
     
     def compare_models(self, model_results: Dict[str, Dict[str, Any]]) -> pd.DataFrame:
         """

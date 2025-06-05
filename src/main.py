@@ -420,7 +420,8 @@ def run_training_step(input_path: str, config: PipelineConfig) -> Dict[str, Any]
         optimize_hyperparameters=config.optimize_hyperparameters,
         search_method=config.search_method,
         search_cv=config.search_cv,
-        search_n_iter=config.search_n_iter
+        search_n_iter=config.search_n_iter,
+        identifier_columns=config.identifier_columns  # Pass identifier columns for analysis
     )
     
     return results
@@ -438,11 +439,26 @@ def run_evaluation_step(config: PipelineConfig) -> Dict[str, Any]:
     # Validate model file exists
     validate_file_exists(model_path, "Trained model file")
     
+    # Calculate feature columns (same logic as training step)
+    df = safe_load_csv(config.input_path, encoding='utf-8')
+    all_columns = df.columns.tolist()
+    
+    # Remove target column and identifier columns from feature list
+    feature_columns = [col for col in all_columns if col != config.target_column]
+    if config.identifier_columns:
+        identifier_columns_existing = [col for col in config.identifier_columns if col in df.columns]
+        feature_columns = [col for col in feature_columns if col not in identifier_columns_existing]
+        logger.info(f"Excluding {len(identifier_columns_existing)} identifier columns from evaluation: {identifier_columns_existing}")
+    
+    logger.info(f"Using {len(feature_columns)} feature columns for evaluation")
+    
     results = evaluate_model_pipeline(
         model_path=model_path,
         test_data_path=config.input_path,
         target_column=config.target_column,
-        output_dir=str(eval_dir)
+        output_dir=str(eval_dir),
+        feature_columns=feature_columns,  # Pass the calculated feature columns
+        identifier_columns=config.identifier_columns  # Pass identifier columns from config
     )
     
     return results

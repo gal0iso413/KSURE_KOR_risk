@@ -68,6 +68,8 @@ class ModelTrainer:
         self.is_data_prepared = False
         self.feature_names = None
         self.target_column = None
+        self.original_test_data = None  # Store original test data for analysis
+        self.identifier_columns = None  # Store identifier columns
         
         logger.info(f"ModelTrainer initialized with output_dir: {self.output_dir}")
     
@@ -120,22 +122,25 @@ class ModelTrainer:
         y = self.data_processor.convert_to_severity_levels(y_raw)
         
         # Validate data quality
-        X, y = self.data_processor.validate_features_and_target(X, y)
+        X, y = self.data_processor.validate_features_and_target(X, y, feature_columns)
         
         # Split data before handling imbalance (to avoid data leakage)
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y,
+        X_train, X_test, y_train, y_test, data_train, data_test = train_test_split(
+            X, y, data,
             test_size=self.test_size,
             random_state=self.random_state,
             stratify=y
         )
+        
+        # Store original test data for analysis
+        self.original_test_data = data_test
         
         logger.info(f"Data split - Train: {len(X_train)}, Test: {len(X_test)}")
         
         # Handle imbalanced data (only on training set)
         if handle_imbalance and handle_imbalance != 'none':
             result = self.imbalance_handler.handle_imbalanced_data(
-                X_train, y_train, method=handle_imbalance
+                X_train, y_train, method=handle_imbalance, feature_columns=feature_columns
             )
             
             if handle_imbalance == 'smote':
@@ -232,7 +237,9 @@ class ModelTrainer:
             X_test,
             y_test,
             self.feature_names,
-            model_name
+            model_name,
+            self.original_test_data,
+            self.identifier_columns
         )
         
         return results
@@ -425,7 +432,8 @@ class ModelTrainer:
         optimize_hyperparameters: bool = False,
         search_method: str = DEFAULT_SEARCH_METHOD,
         search_cv: int = DEFAULT_SEARCH_CV,
-        search_n_iter: int = DEFAULT_SEARCH_N_ITER
+        search_n_iter: int = DEFAULT_SEARCH_N_ITER,
+        identifier_columns: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Train and evaluate multiple models.
@@ -459,6 +467,9 @@ class ModelTrainer:
                            f"Available types: {AVAILABLE_MODEL_TYPES}")
         
         logger.info(f"Training {len(model_types)} model types: {model_types}")
+        
+        # Store identifier columns for analysis
+        self.identifier_columns = identifier_columns
         
         # Prepare data
         X_train, X_test, y_train, y_test, feature_names = self.prepare_data(
@@ -565,7 +576,8 @@ def train_pipeline(
     optimize_hyperparameters: bool = False,
     search_method: str = DEFAULT_SEARCH_METHOD,
     search_cv: int = DEFAULT_SEARCH_CV,
-    search_n_iter: int = DEFAULT_SEARCH_N_ITER
+    search_n_iter: int = DEFAULT_SEARCH_N_ITER,
+    identifier_columns: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
     Complete model training pipeline function.
@@ -616,7 +628,8 @@ def train_pipeline(
         optimize_hyperparameters=optimize_hyperparameters,
         search_method=search_method,
         search_cv=search_cv,
-        search_n_iter=search_n_iter
+        search_n_iter=search_n_iter,
+        identifier_columns=identifier_columns
     )
     
     logger.info("Model training pipeline completed successfully")

@@ -135,7 +135,8 @@ class EvaluationPipeline:
         test_data: pd.DataFrame,
         target_column: str,
         feature_columns: Optional[List[str]] = None,
-        model_name: Optional[str] = None
+        model_name: Optional[str] = None,
+        identifier_columns: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Evaluate a single model on test data.
@@ -179,12 +180,12 @@ class EvaluationPipeline:
         y_test = self.data_processor.convert_to_severity_levels(y_test_raw)
         
         # Validate data
-        X_test, y_test = self.data_processor.validate_features_and_target(X_test, y_test)
+        X_test, y_test = self.data_processor.validate_features_and_target(X_test, y_test, feature_columns)
         
         # Create evaluator and evaluate
         evaluator = ModelEvaluator(self.output_dir)
         results = evaluator.evaluate_classification_model(
-            model, X_test, y_test, feature_columns, model_name
+            model, X_test, y_test, feature_columns, model_name, test_data, identifier_columns
         )
         
         logger.info(f"Evaluation completed for model '{model_name}'")
@@ -196,7 +197,8 @@ class EvaluationPipeline:
         model_dir: Union[str, Path],
         test_data: pd.DataFrame,
         target_column: str,
-        feature_columns: Optional[List[str]] = None
+        feature_columns: Optional[List[str]] = None,
+        identifier_columns: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Evaluate multiple models from a directory.
@@ -225,7 +227,7 @@ class EvaluationPipeline:
         X_test = test_data[feature_columns]
         y_test_raw = test_data[target_column]
         y_test = self.data_processor.convert_to_severity_levels(y_test_raw)
-        X_test, y_test = self.data_processor.validate_features_and_target(X_test, y_test)
+        X_test, y_test = self.data_processor.validate_features_and_target(X_test, y_test, feature_columns)
         
         # Evaluate each model
         all_results = {}
@@ -236,7 +238,7 @@ class EvaluationPipeline:
                 logger.info(f"Evaluating model: {model_name}")
                 
                 results = evaluator.evaluate_classification_model(
-                    model, X_test, y_test, feature_columns, model_name
+                    model, X_test, y_test, feature_columns, model_name, test_data, identifier_columns
                 )
                 all_results[model_name] = results
                 
@@ -305,7 +307,8 @@ def evaluate_model_pipeline(
     target_column: str,
     output_dir: Union[str, Path],
     feature_columns: Optional[List[str]] = None,
-    model_name: Optional[str] = None
+    model_name: Optional[str] = None,
+    identifier_columns: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
     Complete pipeline for evaluating a single model.
@@ -333,7 +336,7 @@ def evaluate_model_pipeline(
     
     # Evaluate model
     results = pipeline.evaluate_single_model(
-        model_path, test_data, target_column, feature_columns, model_name
+        model_path, test_data, target_column, feature_columns, model_name, identifier_columns
     )
     
     # Generate report
