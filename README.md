@@ -107,7 +107,7 @@ python src/main.py \
     --numeric-columns money asset liability sales \
     --categorical-columns region type category \
     --date-columns frdate accdate \
-    --columns-to-drop 사고번호 기업번호 사고접수일자 \
+    --identifier-columns 사고번호 기업번호 사고접수일자 \
     --test-size 0.2 \
     --random-state 42 \
     --n-splits 5
@@ -138,7 +138,7 @@ python src/main.py \
     --numeric-columns feature1 feature2 money \
     --categorical-columns type category \
     --date-columns frdate accdate \
-    --columns-to-drop 사고번호 기업번호 \
+    --identifier-columns 사고번호 기업번호 \
     --test-size 0.2 \
     --random-state 42 \
     --n-splits 5
@@ -160,7 +160,7 @@ Create a JSON config file and use it with the `--config` option:
     "numeric-columns": ["money", "asset", "liability", "sales", "profit"],
     "categorical-columns": ["region", "industry_type"],
     "date-columns": ["frdate", "accdate"],
-    "columns-to-drop": ["사고번호", "기업번호", "사고접수일자"],
+    "identifier-columns": ["사고번호", "기업번호", "사고접수일자"],
     "handle-outliers-cols": ["money", "asset", "liability", "sales", "profit"],
     "test-size": 0.2,
     "random-state": 42,
@@ -227,9 +227,18 @@ eval_results = evaluate_multiple_models_pipeline(
 - `--numeric-columns`: List of numeric column names
 - `--categorical-columns`: List of categorical column names  
 - `--date-columns`: List of date column names
-- `--columns-to-drop`: Columns to exclude from analysis
+- `--identifier-columns`: Columns to keep as row identifiers but exclude from processing
 - `--handle-outliers-cols`: Columns for outlier detection
 - `--test-size`: Train/test split ratio (default: 0.2)
+
+**Note on Identifier Columns:**
+The `--identifier-columns` option allows you to keep certain columns in your dataset as row identifiers without using them in model processing. These columns will:
+- ✅ Be preserved in all output files (preprocessed, featured, model predictions)
+- ❌ Be excluded from preprocessing (cleaning, scaling, encoding)
+- ❌ Be excluded from feature engineering 
+- ❌ Be excluded from model training and prediction
+
+Perfect for: database IDs, customer identifiers, timestamps, reference codes, or any tracking information you need for later analysis or data joining.
 
 #### **Feature Engineering:**
 - `--interaction-features`: Features for creating interactions (pairs)

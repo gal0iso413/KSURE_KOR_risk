@@ -48,6 +48,13 @@ MIN_ROWS_THRESHOLD: int = 10
 MAX_MISSING_RATIO: float = 0.5  # Maximum 50% missing values allowed
 MIN_UNIQUE_VALUES: int = 2  # Minimum unique values for categorical features
 
+# Identifier columns - columns kept as row identifiers but excluded from processing
+# These columns are preserved throughout the pipeline but not used in:
+# - Preprocessing (cleaning, scaling, encoding)
+# - Feature engineering 
+# - Model training and prediction
+DEFAULT_IDENTIFIER_COLUMNS: List[str] = []  # No default identifier columns
+
 # ============================================================================
 # MODEL TRAINING CONSTANTS
 # ============================================================================

@@ -464,7 +464,7 @@ def preprocess_pipeline(
     numeric_columns: List[str],
     categorical_columns: List[str],
     date_columns: List[str] = None,
-    columns_to_drop: Optional[List[str]] = None,
+    identifier_columns: Optional[List[str]] = None,
     handle_outliers_cols: Optional[List[str]] = None,
     outlier_method: str = DEFAULT_OUTLIER_METHOD,
     outlier_threshold: float = DEFAULT_OUTLIER_THRESHOLD,
@@ -480,7 +480,7 @@ def preprocess_pipeline(
         numeric_columns: List of numeric columns
         categorical_columns: List of categorical columns
         date_columns: List of date columns
-        columns_to_drop: List of columns to drop from the dataset
+        identifier_columns: List of columns to keep as identifiers but exclude from processing
         handle_outliers_cols: List of columns to handle outliers for
         outlier_method: Method for outlier handling
         outlier_threshold: Threshold for outlier detection
@@ -491,28 +491,37 @@ def preprocess_pipeline(
     df = safe_load_csv(input_path, encoding=DEFAULT_ENCODING)
     logger.info(f"Loaded data with shape {df.shape}")
     
-    # Drop specified columns
-    if columns_to_drop:
-        columns_to_drop_existing = [col for col in columns_to_drop if col in df.columns]
-        if columns_to_drop_existing:
-            df = df.drop(columns=columns_to_drop_existing)
-            logger.info(f"Dropped {len(columns_to_drop_existing)} columns: {columns_to_drop_existing}")
+    # Keep identifier columns but exclude them from processing
+    if identifier_columns:
+        identifier_columns_existing = [col for col in identifier_columns if col in df.columns]
+        if identifier_columns_existing:
+            logger.info(f"Keeping {len(identifier_columns_existing)} columns as identifiers (excluded from processing): {identifier_columns_existing}")
+        
+        # Remove identifier columns from processing lists
+        numeric_columns = [col for col in numeric_columns if col not in identifier_columns_existing]
+        categorical_columns = [col for col in categorical_columns if col not in identifier_columns_existing]
+        if date_columns:
+            date_columns = [col for col in date_columns if col not in identifier_columns_existing]
+        if handle_outliers_cols:
+            handle_outliers_cols = [col for col in handle_outliers_cols if col not in identifier_columns_existing]
     
     # Initialize processors
     cleaner = DataCleaner()
     outlier_handler = OutlierHandler()
     transformer = DataTransformer()
     
-    # Clean the data
+    # Clean the data (excluding identifier columns)
     df = cleaner.clean_data(df, date_columns or DEFAULT_DATE_COLUMNS, numeric_columns)
     
-    # Handle outliers if specified
+    # Handle outliers if specified (excluding identifier columns)
     if handle_outliers_cols:
         df = outlier_handler.handle_outliers(df, handle_outliers_cols, outlier_method, outlier_threshold)
     
-    # Transform the data
+    # Transform the data (excluding identifier columns)
     df = transformer.transform_data(df, numeric_columns, categorical_columns, scaler_type, encoding_method)
     
-    # Save the processed data
+    # Save the processed data (identifier columns will still be present)
     safe_save_csv(df, output_path, "preprocessed data")
     logger.info(f"Preprocessing pipeline completed successfully. Final shape: {df.shape}")
+    if identifier_columns:
+        logger.info(f"Identifier columns preserved: {[col for col in identifier_columns if col in df.columns]}")

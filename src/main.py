@@ -26,7 +26,7 @@ from constants import (
 from utils.logging_config import get_logger
 from utils.common import (
     validate_file_exists, create_directory_if_not_exists,
-    standardize_error_handling
+    standardize_error_handling, safe_load_csv, safe_save_csv
 )
 from data_preprocessing import preprocess_pipeline
 from feature_engineering import engineer_features
@@ -53,7 +53,7 @@ class PipelineConfig:
         self.numeric_columns = args.numeric_columns or []
         self.categorical_columns = args.categorical_columns or []
         self.date_columns = args.date_columns or DEFAULT_DATE_COLUMNS
-        self.columns_to_drop = args.columns_to_drop or []
+        self.identifier_columns = args.identifier_columns or []
         self.handle_outliers_cols = args.handle_outliers_cols or []
         
         # Feature engineering parameters
@@ -192,9 +192,9 @@ def _add_data_arguments(parser: argparse.ArgumentParser) -> None:
         help='List of date columns'
     )
     data.add_argument(
-        '--columns-to-drop',
+        '--identifier-columns',
         nargs='+',
-        help='Columns to drop from the dataset'
+        help='Columns to keep as row identifiers but exclude from processing'
     )
     data.add_argument(
         '--handle-outliers-cols',
@@ -333,7 +333,7 @@ def run_preprocessing_step(config: PipelineConfig) -> str:
         numeric_columns=config.numeric_columns,
         categorical_columns=config.categorical_columns,
         date_columns=config.date_columns,
-        columns_to_drop=config.columns_to_drop,
+        identifier_columns=config.identifier_columns,
         handle_outliers_cols=config.handle_outliers_cols
     )
     
@@ -344,6 +344,19 @@ def run_preprocessing_step(config: PipelineConfig) -> str:
 def run_feature_engineering_step(input_path: str, config: PipelineConfig) -> str:
     """Execute the feature engineering step."""
     featured_path = os.path.join(config.output_dir, 'featured_data.csv')
+    
+    # Read data to handle identifier columns
+    df = safe_load_csv(input_path, encoding='utf-8')
+    
+    # Separate identifier columns from processing columns
+    identifier_columns_to_preserve = []
+    if config.identifier_columns:
+        identifier_columns_existing = [col for col in config.identifier_columns if col in df.columns]
+        if identifier_columns_existing:
+            # Store identifier columns data
+            identifier_data = df[identifier_columns_existing].copy()
+            identifier_columns_to_preserve = identifier_columns_existing
+            logger.info(f"Preserving {len(identifier_columns_existing)} identifier columns during feature engineering")
     
     engineer_features(
         input_path=input_path,
@@ -358,6 +371,19 @@ def run_feature_engineering_step(input_path: str, config: PipelineConfig) -> str
         n_select_features=config.n_select_features
     )
     
+    # Re-add identifier columns if they were preserved
+    if identifier_columns_to_preserve:
+        # Read the feature-engineered data
+        df_featured = safe_load_csv(featured_path, encoding='utf-8')
+        
+        # Add back identifier columns
+        for col in identifier_columns_to_preserve:
+            df_featured[col] = identifier_data[col]
+        
+        # Save with identifier columns included
+        safe_save_csv(df_featured, featured_path, "feature-engineered data with identifiers")
+        logger.info(f"Added back {len(identifier_columns_to_preserve)} identifier columns to featured data")
+    
     return featured_path
 
 
@@ -369,11 +395,25 @@ def run_training_step(input_path: str, config: PipelineConfig) -> Dict[str, Any]
         "Models directory"
     )
     
+    # Calculate feature columns (exclude identifier columns and target)
+    df = safe_load_csv(input_path, encoding='utf-8')
+    all_columns = df.columns.tolist()
+    
+    # Remove target column and identifier columns from feature list
+    feature_columns = [col for col in all_columns if col != config.target_column]
+    if config.identifier_columns:
+        identifier_columns_existing = [col for col in config.identifier_columns if col in df.columns]
+        feature_columns = [col for col in feature_columns if col not in identifier_columns_existing]
+        logger.info(f"Excluding {len(identifier_columns_existing)} identifier columns from training: {identifier_columns_existing}")
+    
+    logger.info(f"Using {len(feature_columns)} feature columns for training")
+    
     results = train_pipeline(
         input_path=input_path,
         output_dir=str(model_dir),
         target_column=config.target_column,
         model_types=config.model_type,
+        feature_columns=feature_columns,  # Explicitly exclude identifiers
         handle_imbalance=config.handle_imbalance,
         test_size=config.test_size,
         random_state=config.random_state,
