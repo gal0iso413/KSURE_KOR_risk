@@ -382,7 +382,8 @@ def run_feature_engineering_step(input_path: str, config: PipelineConfig) -> str
         feature_pairs=config.interaction_features,
         polynomial_features=config.polynomial_features,
         n_components=config.pca_components,
-        n_select_features=config.n_select_features
+        n_select_features=config.n_select_features,
+        identifier_columns=config.identifier_columns  # Pass identifier columns to exclude from processing
     )
     
     # Re-add identifier columns if they were preserved

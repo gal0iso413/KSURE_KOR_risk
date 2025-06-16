@@ -482,7 +482,8 @@ class FeatureEngineeringPipeline:
         polynomial_features: Optional[List[str]] = None,
         polynomial_degree: int = DEFAULT_POLYNOMIAL_DEGREE,
         n_components: Optional[int] = None,
-        n_select_features: Optional[int] = None
+        n_select_features: Optional[int] = None,
+        identifier_columns: Optional[List[str]] = None
     ) -> pd.DataFrame:
         """
         Run the complete feature engineering pipeline.
@@ -498,11 +499,29 @@ class FeatureEngineeringPipeline:
             polynomial_degree: Degree for polynomial features
             n_components: Number of PCA components
             n_select_features: Number of features to select
+            identifier_columns: List of identifier columns to exclude from processing
             
         Returns:
             Transformed DataFrame
         """
         logger.info(f"Starting feature engineering pipeline with input shape: {df.shape}")
+        
+        # Handle identifier columns
+        if identifier_columns:
+            identifier_columns_existing = [col for col in identifier_columns if col in df.columns]
+            if identifier_columns_existing:
+                logger.info(f"Excluding {len(identifier_columns_existing)} identifier columns from feature engineering: {identifier_columns_existing}")
+                
+                # Remove identifier columns from processing lists
+                numeric_features = [col for col in numeric_features if col not in identifier_columns_existing]
+                categorical_features = [col for col in categorical_features if col not in identifier_columns_existing]
+                if date_features:
+                    date_features = [col for col in date_features if col not in identifier_columns_existing]
+                if feature_pairs:
+                    feature_pairs = [(f1, f2) for f1, f2 in feature_pairs 
+                                   if f1 not in identifier_columns_existing and f2 not in identifier_columns_existing]
+                if polynomial_features:
+                    polynomial_features = [col for col in polynomial_features if col not in identifier_columns_existing]
         
         # Create interaction features
         if feature_pairs:
@@ -529,8 +548,10 @@ class FeatureEngineeringPipeline:
         
         # Perform feature selection
         if n_select_features and target_column:
-            # Get all feature columns (excluding target)
+            # Get all feature columns (excluding target and identifiers)
             feature_cols = [col for col in df.columns if col != target_column]
+            if identifier_columns:
+                feature_cols = [col for col in feature_cols if col not in identifier_columns_existing]
             df = self.feature_selector.select_features(df, feature_cols, target_column, n_select_features)
         
         logger.info(f"Feature engineering pipeline completed. Final shape: {df.shape}")
@@ -549,7 +570,8 @@ def engineer_features(
     polynomial_features: Optional[List[str]] = None,
     polynomial_degree: int = DEFAULT_POLYNOMIAL_DEGREE,
     n_components: Optional[int] = None,
-    n_select_features: Optional[int] = None
+    n_select_features: Optional[int] = None,
+    identifier_columns: Optional[List[str]] = None
 ) -> None:
     """
     Complete feature engineering pipeline function.
@@ -566,6 +588,7 @@ def engineer_features(
         polynomial_degree: Degree for polynomial features
         n_components: Number of PCA components
         n_select_features: Number of features to select
+        identifier_columns: List of identifier columns to exclude from processing
     """
     # Read the data
     df = safe_load_csv(input_path, encoding=DEFAULT_ENCODING)
@@ -583,7 +606,8 @@ def engineer_features(
         polynomial_features=polynomial_features,
         polynomial_degree=polynomial_degree,
         n_components=n_components,
-        n_select_features=n_select_features
+        n_select_features=n_select_features,
+        identifier_columns=identifier_columns
     )
     
     # Save the engineered data
