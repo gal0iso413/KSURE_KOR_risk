@@ -26,7 +26,7 @@ TESTS_DIR = PROJECT_ROOT / "tests"
 # ============================================================================
 
 # Default column configurations
-DEFAULT_DATE_COLUMNS: List[str] = ['재무제표결산날짜', '사고접수날짜']
+DEFAULT_DATE_COLUMNS: List[str] = ['재무제표결산날짜', '사고접수일자']
 DEFAULT_DATE_FORMAT: str = '%Y-%m-%d'
 
 # Default preprocessing parameters
@@ -44,7 +44,7 @@ DEFAULT_ENCODING: str = 'utf-8'
 DEFAULT_CSV_SEPARATOR: str = ','
 
 # Data validation
-MIN_ROWS_THRESHOLD: int = 10
+MIN_ROWS_THRESHOLD: int = 2
 MAX_MISSING_RATIO: float = 0.5  # Maximum 50% missing values allowed
 MIN_UNIQUE_VALUES: int = 2  # Minimum unique values for categorical features
 

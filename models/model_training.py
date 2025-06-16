@@ -457,11 +457,14 @@ class ModelTrainer:
         Returns:
             Comprehensive results for all models
         """
-        # Default to all available models if none specified
-        if model_types is None:
+        # Default to all available models if none specified or if 'all' is specified
+        if model_types is None or (isinstance(model_types, list) and len(model_types) == 1 and model_types[0] == 'all'):
             model_types = AVAILABLE_MODEL_TYPES
         elif isinstance(model_types, str):
-            model_types = [model_types]
+            if model_types == 'all':
+                model_types = AVAILABLE_MODEL_TYPES
+            else:
+                model_types = [model_types]
         
         # Validate model types
         invalid_types = [mt for mt in model_types if mt not in AVAILABLE_MODEL_TYPES]
