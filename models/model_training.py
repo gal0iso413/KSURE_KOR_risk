@@ -433,7 +433,8 @@ class ModelTrainer:
         search_method: str = DEFAULT_SEARCH_METHOD,
         search_cv: int = DEFAULT_SEARCH_CV,
         search_n_iter: int = DEFAULT_SEARCH_N_ITER,
-        identifier_columns: Optional[List[str]] = None
+        identifier_columns: Optional[List[str]] = None,
+        n_splits: int = DEFAULT_CV_SPLITS
     ) -> Dict[str, Any]:
         """
         Train and evaluate multiple models.
@@ -450,6 +451,8 @@ class ModelTrainer:
             search_method: Hyperparameter search method ('grid', 'random')
             search_cv: Number of CV folds for hyperparameter search
             search_n_iter: Number of iterations for random search
+            identifier_columns: Optional list of identifier columns
+            n_splits: Number of cross-validation splits
             
         Returns:
             Comprehensive results for all models
@@ -502,10 +505,10 @@ class ModelTrainer:
                 model_dir = self.output_dir / model_type
                 create_directory_if_not_exists(model_dir, f"{model_type} model directory")
                 
-                # Train model with optional hyperparameter optimization
+                # Step 1: Hyperparameter optimization if requested
                 if optimize_hyperparameters:
                     logger.info(f"Performing hyperparameter search for {model_type}...")
-                    optimized_model, search_results = self.hyperparameter_search(
+                    best_model, search_results = self.hyperparameter_search(
                         model_type=model_type,
                         X_train=X_train,
                         y_train=y_train,
@@ -513,10 +516,12 @@ class ModelTrainer:
                         cv_splits=search_cv,
                         n_iter=search_n_iter
                     )
-                    # Wrap the sklearn model in our model class
-                    model = self.model_factory.get_model(model_type, self.random_state)
-                    model.model = optimized_model
                     hyperparameter_results[model_type] = search_results
+                    
+                    # Create and fit model with best parameters
+                    model = self.model_factory.get_model(model_type, self.random_state)
+                    model.model = best_model
+                    model.fit(X_train, y_train)  # Ensure model is fitted
                 else:
                     # Train with default hyperparameters
                     class_weights = getattr(self, 'class_weights', None)
@@ -524,19 +529,24 @@ class ModelTrainer:
                 
                 trained_models[model_type] = model
                 
-                # Save model if requested
+                # Step 2: Cross-validation if requested (only on training data)
+                if perform_cv:
+                    cv_result = self.cross_validate_model(
+                        model_type=model_type,
+                        X=X_train,
+                        y=y_train,
+                        cv_splits=n_splits
+                    )
+                    cv_results[model_type] = cv_result
+                
+                # Step 3: Save model if requested
                 if save_models:
                     model_path = model.save(model_dir)
                     logger.info(f"Saved {model_type} model to {model_path}")
                 
-                # Evaluate model
+                # Step 4: Final evaluation on test set
                 eval_results = self.evaluate_model(model, X_test, y_test, model_type)
                 evaluation_results[model_type] = eval_results
-                
-                # Cross-validation if requested
-                if perform_cv:
-                    cv_result = self.cross_validate_model(model_type, X_train, y_train)
-                    cv_results[model_type] = cv_result
                 
                 logger.info(f"Completed {model_type} model processing")
                 
@@ -577,7 +587,8 @@ def train_pipeline(
     search_method: str = DEFAULT_SEARCH_METHOD,
     search_cv: int = DEFAULT_SEARCH_CV,
     search_n_iter: int = DEFAULT_SEARCH_N_ITER,
-    identifier_columns: Optional[List[str]] = None
+    identifier_columns: Optional[List[str]] = None,
+    n_splits: int = DEFAULT_CV_SPLITS
 ) -> Dict[str, Any]:
     """
     Complete model training pipeline function.
@@ -597,6 +608,8 @@ def train_pipeline(
         search_method: Hyperparameter search method
         search_cv: Number of CV folds for hyperparameter search
         search_n_iter: Number of iterations for random search
+        identifier_columns: Optional list of identifier columns
+        n_splits: Number of cross-validation splits
         
     Returns:
         Comprehensive training results
@@ -629,7 +642,8 @@ def train_pipeline(
         search_method=search_method,
         search_cv=search_cv,
         search_n_iter=search_n_iter,
-        identifier_columns=identifier_columns
+        identifier_columns=identifier_columns,
+        n_splits=n_splits
     )
     
     logger.info("Model training pipeline completed successfully")

@@ -21,7 +21,8 @@ sys.path.insert(0, parent_dir)
 # Import project modules
 from constants import (
     DEFAULT_TARGET_COLUMN, DEFAULT_RANDOM_STATE, DEFAULT_TEST_SIZE,
-    DEFAULT_CV_SPLITS, AVAILABLE_MODEL_TYPES, DEFAULT_DATE_COLUMNS
+    DEFAULT_CV_SPLITS, AVAILABLE_MODEL_TYPES, DEFAULT_DATE_COLUMNS,
+    AVAILABLE_SEARCH_METHODS
 )
 from utils.logging_config import get_logger
 from utils.common import (
@@ -67,6 +68,7 @@ class PipelineConfig:
         self.model_type = args.model_type
         self.handle_imbalance = args.handle_imbalance
         self.n_splits = args.n_splits
+        self.perform_cv = args.n_splits >= 2  # Enable CV only if n_splits >= 2
         
         # Hyperparameter optimization parameters
         self.optimize_hyperparameters = args.optimize_hyperparameters
@@ -108,11 +110,23 @@ class PipelineConfig:
         if not (0 < self.test_size < 1):
             raise ValueError(f"Test size must be between 0 and 1, got {self.test_size}")
         
-        if self.n_splits < 2:
-            raise ValueError(f"Number of CV splits must be >= 2, got {self.n_splits}")
+        if self.n_splits < 0:
+            raise ValueError(f"Number of CV splits must be >= 0, got {self.n_splits}")
         
         if self.polynomial_degree < 1:
             raise ValueError(f"Polynomial degree must be >= 1, got {self.polynomial_degree}")
+        
+        # Validate hyperparameter search settings
+        if self.optimize_hyperparameters:
+            if self.search_method not in AVAILABLE_SEARCH_METHODS:
+                raise ValueError(f"Invalid search method: {self.search_method}. "
+                               f"Available methods: {AVAILABLE_SEARCH_METHODS}")
+            
+            if self.search_cv < 2:
+                raise ValueError(f"Search CV folds must be >= 2, got {self.search_cv}")
+            
+            if self.search_method == 'random' and self.search_n_iter < 1:
+                raise ValueError(f"Number of search iterations must be >= 1, got {self.search_n_iter}")
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
@@ -421,7 +435,9 @@ def run_training_step(input_path: str, config: PipelineConfig) -> Dict[str, Any]
         search_method=config.search_method,
         search_cv=config.search_cv,
         search_n_iter=config.search_n_iter,
-        identifier_columns=config.identifier_columns  # Pass identifier columns for analysis
+        identifier_columns=config.identifier_columns,  # Pass identifier columns for analysis
+        n_splits=config.n_splits,  # Pass n_splits parameter
+        perform_cv=config.perform_cv
     )
     
     return results
